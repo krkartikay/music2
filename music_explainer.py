@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QLabel,
     QSlider,
+    QScrollBar,
 )
 from PySide6.QtCore import Qt
 from waveform_widget import WaveformWidget
@@ -21,6 +22,7 @@ class MusicExplainer(QMainWindow):
 
         self.audio_handler = AudioHandler()
         self.setup_ui()
+        self.setup_audio_handler()
 
     def setup_ui(self):
         main_widget = QWidget()
@@ -36,6 +38,54 @@ class MusicExplainer(QMainWindow):
         main_layout.addWidget(analysis_panel)
 
         self.setCentralWidget(main_widget)
+
+        # Add horizontal scroll bar
+        self.h_scroll = QScrollBar(Qt.Horizontal)
+        self.h_scroll.valueChanged.connect(self.waveform_widget.set_scroll)
+        main_layout.addWidget(self.h_scroll)
+
+        # Add zoom slider
+        zoom_layout = QHBoxLayout()
+        zoom_layout.addWidget(QLabel("Zoom:"))
+        self.zoom_slider = QSlider(Qt.Horizontal)
+        self.zoom_slider.setRange(100, 1000)  # 1x to 10x zoom
+        self.zoom_slider.setValue(100)
+        self.zoom_slider.valueChanged.connect(self.update_zoom)
+        zoom_layout.addWidget(self.zoom_slider)
+        main_layout.addLayout(zoom_layout)
+
+    def setup_audio_handler(self):
+        self.audio_handler = AudioHandler()
+        self.audio_handler.playback_position_changed.connect(self.update_playhead)
+        self.waveform_widget.playhead_changed.connect(self.seek_audio)
+
+    def open_file(self):
+        file_name, _ = QFileDialog.getOpenFileName(
+            self, "Open Audio File", "", "Audio Files (*.wav)"
+        )
+        if file_name:
+            self.audio_handler.load_file(file_name)
+            self.waveform_widget.set_waveform(self.audio_handler.waveform)
+            self.update_ui_for_new_file()
+
+    def update_ui_for_new_file(self):
+        self.time_slider.setEnabled(True)
+        self.time_slider.setRange(0, len(self.audio_handler.waveform))
+        self.h_scroll.setRange(0, self.waveform_widget.get_max_scroll())
+        self.update_zoom()
+
+    def update_zoom(self):
+        zoom_factor = self.zoom_slider.value() / 100
+        self.waveform_widget.set_zoom(zoom_factor)
+        self.h_scroll.setRange(0, self.waveform_widget.get_max_scroll())
+
+    def update_playhead(self, position):
+        self.waveform_widget.set_playhead(position)
+        self.time_slider.setValue(position)
+
+    def seek_audio(self, position):
+        self.audio_handler.seek(position)
+        self.time_slider.setValue(position)
 
     def create_control_panel(self):
         control_panel = QWidget()

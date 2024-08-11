@@ -3,13 +3,19 @@ import wave
 import threading
 import numpy as np
 
+from PySide6.QtCore import QObject, Signal
 
-class AudioHandler:
-    def __init__(self):
+
+class AudioHandler(QObject):
+    playback_position_changed = Signal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.audio_file = None
         self.is_playing = False
         self.play_thread = None
         self.waveform = None
+        self.current_position = 0
 
     def load_file(self, file_path):
         self.audio_file = file_path
@@ -50,11 +56,20 @@ class AudioHandler:
         while data and self.is_playing:
             stream.write(data)
             data = wf.readframes(chunk)
+            self.current_position += chunk
+            self.playback_position_changed.emit(self.current_position)
 
         stream.stop_stream()
         stream.close()
         p.terminate()
         self.is_playing = False
+
+    def seek(self, position):
+        if self.audio_file:
+            with wave.open(self.audio_file, "rb") as wf:
+                wf.setpos(position)
+            self.current_position = position
+            self.playback_position_changed.emit(self.current_position)
 
     def stop(self):
         self.is_playing = False
