@@ -31,6 +31,9 @@ class AudioHandler(QObject):
                     self.waveform.astype(np.float32) / 32768.0
                 )  # Normalize to [-1, 1]
 
+    def get_current_position(self):
+        return self.current_position
+
     def play(self):
         if not self.audio_file or self.is_playing:
             return

@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QSlider,
     QScrollBar,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from waveform_widget import WaveformWidget
 from audio_handler import AudioHandler
 
@@ -23,6 +23,11 @@ class MusicExplainer(QMainWindow):
         self.audio_handler = AudioHandler()
         self.setup_ui()
         self.setup_audio_handler()
+
+        # Timer for updating playhead position
+        self.playhead_timer = QTimer(self)
+        self.playhead_timer.timeout.connect(self.update_playhead)
+        self.playhead_timer.start(50)  # Update every 50ms
 
     def setup_ui(self):
         main_widget = QWidget()
@@ -60,6 +65,7 @@ class MusicExplainer(QMainWindow):
         self.audio_handler.playback_position_changed.connect(self.update_playhead)
         self.waveform_widget.playhead_changed.connect(self.seek_audio)
         self.waveform_widget.zoom_changed.connect(self.update_zoom_labels)
+        self.waveform_widget.scroll_changed.connect(self.update_scroll_bar)
 
     def update_zoom_labels(self, h_zoom, v_zoom):
         self.horizontal_zoom_label.setText(f"{h_zoom:.2f}x")
@@ -86,9 +92,14 @@ class MusicExplainer(QMainWindow):
         self.waveform_widget.set_zoom(zoom_factor)
         self.h_scroll.setRange(0, self.waveform_widget.get_max_scroll())
 
-    def update_playhead(self, position):
-        self.waveform_widget.set_playhead(position)
-        self.time_slider.setValue(position)
+    def update_playhead(self):
+        if self.audio_handler.is_playing:
+            current_position = self.audio_handler.get_current_position()
+            self.waveform_widget.set_playhead(current_position)
+            self.time_slider.setValue(current_position)
+
+    def update_scroll_bar(self, position):
+        self.h_scroll.setValue(position)
 
     def seek_audio(self, position):
         self.audio_handler.seek(position)

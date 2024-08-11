@@ -7,6 +7,7 @@ import numpy as np
 class WaveformWidget(QWidget):
     playhead_changed = Signal(int)
     zoom_changed = Signal(float, float)  # Emit horizontal and vertical zoom factors
+    scroll_changed = Signal(int)  # Signal to inform when scrolling occurs
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -39,6 +40,32 @@ class WaveformWidget(QWidget):
         self.playhead_position = max(
             0, min(position, len(self.waveform) - 1 if self.waveform is not None else 0)
         )
+        self.ensure_playhead_visible()
+        self.update()
+
+    def ensure_playhead_visible(self):
+        if self.waveform is None:
+            return
+
+        samples_per_pixel = max(
+            1, int(len(self.waveform) / (self.width() * self.horizontal_zoom_factor))
+        )
+        playhead_pixel = self.playhead_position // samples_per_pixel
+
+        # Check if playhead is outside the visible area
+        if (
+            playhead_pixel < self.scroll_position
+            or playhead_pixel >= self.scroll_position + self.width()
+        ):
+            # Center the playhead in the view
+            new_scroll = max(
+                0, min(playhead_pixel - self.width() // 2, self.get_max_scroll())
+            )
+            self.set_scroll(new_scroll)
+            self.scroll_changed.emit(new_scroll)
+
+    def set_scroll(self, position):
+        self.scroll_position = max(0, min(position, self.get_max_scroll()))
         self.update()
 
     def get_max_scroll(self):
