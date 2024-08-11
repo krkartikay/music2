@@ -99,41 +99,51 @@ def pitch_to_note(pitch):
 
 
 def create_piano_keyboard(ax):
-    white_keys = [0, 2, 4, 5, 7, 9, 11]
-    black_keys = [1, 3, 6, 8, 10]
+    white_keys = [0, 2, 4, 5, 7, 9, 11]  # C, D, E, F, G, A, B
+    black_keys = [1, 3, 6, 8, 10]  # C#, D#, F#, G#, A#
     key_width = 1
     black_key_width = 0.7
     black_key_height = 0.6
 
     keys = []
-    for octave in range(5):  # 5 octaves from C3 to C7
-        for i in range(12):
-            if i == 0 and octave == 4:  # Only add C7
-                x = octave * 7
-                key = Rectangle(
-                    (x, 0), key_width, 1, facecolor="white", edgecolor="black"
-                )
-                ax.add_patch(key)
-                keys.append(key)
-                break
-            if i % 12 in white_keys:
-                x = octave * 7 + white_keys.index(i % 12)
-                key = Rectangle(
-                    (x, 0), key_width, 1, facecolor="white", edgecolor="black"
-                )
-            else:
-                x = octave * 7 + black_keys.index(i % 12) + 0.65
-                key = Rectangle(
-                    (x, 0.4),
-                    black_key_width,
-                    black_key_height,
-                    facecolor="black",
-                    edgecolor="black",
-                )
-            ax.add_patch(key)
-            keys.append(key)
+    total_white_keys = 52  # 88-key piano has 52 white keys
 
-    ax.set_xlim(0, 35)
+    for i in range(88):  # 88 keys total
+        octave = (i + 9) // 12  # Start from A0 (9 keys before C1)
+        note = (i + 9) % 12
+
+        if note in white_keys:
+            x = len(
+                [k for k in keys if isinstance(k, Rectangle) and k.get_height() == 1]
+            )
+            key = Rectangle(
+                (x, 0), key_width, 1, facecolor="white", edgecolor="black", zorder=1
+            )
+        else:
+            prev_white = (
+                len(
+                    [
+                        k
+                        for k in keys
+                        if isinstance(k, Rectangle) and k.get_height() == 1
+                    ]
+                )
+                - 1
+            )
+            x = prev_white + 0.65
+            key = Rectangle(
+                (x, 0.4),
+                black_key_width,
+                black_key_height,
+                facecolor="black",
+                edgecolor="black",
+                zorder=2,
+            )
+
+        ax.add_patch(key)
+        keys.append(key)
+
+    ax.set_xlim(0, total_white_keys)
     ax.set_ylim(0, 1)
     ax.axis("off")
     return keys
@@ -166,8 +176,8 @@ def mono_play_and_plot(input_file):
     freqs, _ = calculate_fft(mono_samples[:segment_len], framerate)
     pitches = freq_to_pitch(freqs)
 
-    # Filter pitches to show only C3 (MIDI note 48) to C7 (MIDI note 96)
-    pitch_mask = (pitches >= 48) & (pitches <= 96)
+    # Filter pitches to show A0 (MIDI note 21) to C8 (MIDI note 108)
+    pitch_mask = (pitches >= 21) & (pitches <= 108)
     pitches = pitches[pitch_mask]
 
     spectrogram = ax2.imshow(
@@ -175,18 +185,18 @@ def mono_play_and_plot(input_file):
         aspect="auto",
         origin="lower",
         cmap="Reds",
-        extent=[0, 10, 48, 96],
+        extent=[0, 10, 21, 108],
         vmin=0,
         vmax=1,
     )
     fig.colorbar(spectrogram, ax=ax2, label="Normalized Magnitude")
-    ax2.set_title("Piano Roll Spectrogram (C3-C7)")
+    ax2.set_title("Piano Roll Spectrogram (A0-C8)")
     ax2.set_xlabel("Time (seconds)")
     ax2.set_ylabel("Pitch")
 
     # Set y-axis ticks to show octaves
-    ax2.set_yticks([48, 60, 72, 84, 96])
-    ax2.set_yticklabels(["C3", "C4", "C5", "C6", "C7"])
+    ax2.set_yticks([21, 33, 45, 57, 69, 81, 93, 105])
+    ax2.set_yticklabels(["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7"])
 
     piano_freqs = generate_piano_frequencies()
     dominant_notes_text = ax2.text(
@@ -227,17 +237,16 @@ def mono_play_and_plot(input_file):
 
         # Update piano keyboard visualization
         for i, key in enumerate(keys):
-            pitch = i + 48  # Start from C3 (MIDI note 48)
-            if pitch <= 96:  # Up to C7 (MIDI note 96)
-                intensity = normalized_magnitudes[
-                    np.argmin(np.abs(freqs - piano_freqs[pitch - 21]))
-                ]
+            pitch = i + 21  # Start from A0 (MIDI note 21)
+            if pitch <= 108:  # Up to C8 (MIDI note 108)
+                freq = 440 * (
+                    2 ** ((pitch - 69) / 12)
+                )  # Calculate frequency for the pitch
+                intensity = normalized_magnitudes[np.argmin(np.abs(freqs - freq))]
                 if isinstance(key, Rectangle) and key.get_height() < 1:  # Black key
                     key.set_facecolor((intensity, 0, 0))
                 else:  # White key
                     key.set_facecolor((1, 1 - intensity, 1 - intensity))
-
-        return line, spectrogram, dominant_notes_text, *keys
         return line, spectrogram, dominant_notes_text, *keys
 
     ani = FuncAnimation(fig, update_plot, interval=100, blit=True)
