@@ -5,6 +5,7 @@ import threading
 import time
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+from matplotlib.patches import Rectangle
 from scipy.fft import fft
 from scipy.signal import find_peaks
 from collections import deque
@@ -57,7 +58,7 @@ class AudioPlayer:
 
 
 def generate_piano_frequencies():
-    return [27.5 * (2 ** (i / 12)) for i in range(88)]
+    return [440 * (2 ** ((i - 49) / 12)) for i in range(88)]  # A4 is 49th key
 
 
 def calculate_fft(samples, sample_rate):
@@ -86,6 +87,58 @@ def find_dominant_notes(freqs, magnitudes, piano_freqs, num_notes=3):
     return notes
 
 
+def freq_to_pitch(freq):
+    return 12 * np.log2(freq / 440) + 49  # A4 is 49th key
+
+
+def pitch_to_note(pitch):
+    note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    octave = (pitch // 12) - 1
+    note = note_names[pitch % 12]
+    return f"{note}{octave}"
+
+
+def create_piano_keyboard(ax):
+    white_keys = [0, 2, 4, 5, 7, 9, 11]
+    black_keys = [1, 3, 6, 8, 10]
+    key_width = 1
+    black_key_width = 0.7
+    black_key_height = 0.6
+
+    keys = []
+    for octave in range(5):  # 5 octaves from C3 to C7
+        for i in range(12):
+            if i == 0 and octave == 4:  # Only add C7
+                x = octave * 7
+                key = Rectangle(
+                    (x, 0), key_width, 1, facecolor="white", edgecolor="black"
+                )
+                ax.add_patch(key)
+                keys.append(key)
+                break
+            if i % 12 in white_keys:
+                x = octave * 7 + white_keys.index(i % 12)
+                key = Rectangle(
+                    (x, 0), key_width, 1, facecolor="white", edgecolor="black"
+                )
+            else:
+                x = octave * 7 + black_keys.index(i % 12) + 0.65
+                key = Rectangle(
+                    (x, 0.4),
+                    black_key_width,
+                    black_key_height,
+                    facecolor="black",
+                    edgecolor="black",
+                )
+            ax.add_patch(key)
+            keys.append(key)
+
+    ax.set_xlim(0, 35)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+    return keys
+
+
 def mono_play_and_plot(input_file):
     with wave.open(input_file, "rb") as wf:
         nchannels, sampwidth, framerate, nframes, comptype, compname = wf.getparams()
@@ -98,7 +151,9 @@ def mono_play_and_plot(input_file):
     else:
         mono_samples = samples
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+    fig, (ax1, ax2, ax3) = plt.subplots(
+        3, 1, figsize=(12, 8), gridspec_kw={"height_ratios": [1, 1, 0.5]}
+    )
     (line,) = ax1.plot([], [])
     segment_len = framerate // 10  # 100ms of data
     ax1.set_xlim(0, segment_len)
@@ -109,24 +164,38 @@ def mono_play_and_plot(input_file):
 
     fft_history = deque(maxlen=100)  # Store 10 seconds of FFT data
     freqs, _ = calculate_fft(mono_samples[:segment_len], framerate)
+    pitches = freq_to_pitch(freqs)
+
+    # Filter pitches to show only C3 (MIDI note 48) to C7 (MIDI note 96)
+    pitch_mask = (pitches >= 48) & (pitches <= 96)
+    pitches = pitches[pitch_mask]
+
     spectrogram = ax2.imshow(
-        np.zeros((len(freqs), 100)),
+        np.zeros((len(pitches), 100)),
         aspect="auto",
         origin="lower",
         cmap="Reds",
-        extent=[0, 10, 0, framerate // 2],
+        extent=[0, 10, 48, 96],
         vmin=0,
         vmax=1,
     )
     fig.colorbar(spectrogram, ax=ax2, label="Normalized Magnitude")
-    ax2.set_title("FFT Spectrogram")
+    ax2.set_title("Piano Roll Spectrogram (C3-C7)")
     ax2.set_xlabel("Time (seconds)")
-    ax2.set_ylabel("Frequency (Hz)")
+    ax2.set_ylabel("Pitch")
+
+    # Set y-axis ticks to show octaves
+    ax2.set_yticks([48, 60, 72, 84, 96])
+    ax2.set_yticklabels(["C3", "C4", "C5", "C6", "C7"])
 
     piano_freqs = generate_piano_frequencies()
     dominant_notes_text = ax2.text(
         0.02, 0.95, "", transform=ax2.transAxes, verticalalignment="top"
     )
+
+    # Create piano keyboard visualization
+    keys = create_piano_keyboard(ax3)
+    ax3.set_title("Piano Keyboard Visualization")
 
     player = AudioPlayer(mono_samples, sampwidth, framerate)
     play_thread = threading.Thread(target=player.play_audio)
@@ -142,25 +211,39 @@ def mono_play_and_plot(input_file):
 
         # Calculate and update FFT
         freqs, magnitudes = calculate_fft(segment, framerate)
+        pitches = freq_to_pitch(freqs)
+        pitch_mask = (pitches >= 48) & (pitches <= 96)
+
         normalized_magnitudes = magnitudes / np.max(magnitudes)
-        fft_history.append(normalized_magnitudes)
+        fft_history.append(normalized_magnitudes[pitch_mask])
 
         # Update spectrogram
         spectrogram.set_array(np.array(fft_history).T)
-        spectrogram.set_extent(
-            [start / framerate - 10, start / framerate, 0, framerate // 2]
-        )
+        spectrogram.set_extent([start / framerate - 10, start / framerate, 48, 96])
 
         # Find and display dominant notes
         dominant_notes = find_dominant_notes(freqs, magnitudes, piano_freqs)
         dominant_notes_text.set_text(f"Dominant Notes: {', '.join(dominant_notes)}")
 
-        return line, spectrogram, dominant_notes_text
+        # Update piano keyboard visualization
+        for i, key in enumerate(keys):
+            pitch = i + 48  # Start from C3 (MIDI note 48)
+            if pitch <= 96:  # Up to C7 (MIDI note 96)
+                intensity = normalized_magnitudes[
+                    np.argmin(np.abs(freqs - piano_freqs[pitch - 21]))
+                ]
+                if isinstance(key, Rectangle) and key.get_height() < 1:  # Black key
+                    key.set_facecolor((intensity, 0, 0))
+                else:  # White key
+                    key.set_facecolor((1, 1 - intensity, 1 - intensity))
+
+        return line, spectrogram, dominant_notes_text, *keys
+        return line, spectrogram, dominant_notes_text, *keys
 
     ani = FuncAnimation(fig, update_plot, interval=100, blit=True)
 
     print(
-        "Playing audio and plotting waveform and FFT spectrogram. Close the plot window to stop."
+        "Playing audio and plotting waveform, piano roll spectrogram, and piano visualization. Close the plot window to stop."
     )
     plt.tight_layout()
     plt.show()
