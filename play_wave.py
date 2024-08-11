@@ -1,3 +1,4 @@
+import sys
 import wave
 import numpy as np
 import pyaudio
@@ -244,13 +245,13 @@ def mono_play_and_plot(input_file):
         start = player.current_position
         end = start + segment_len
         segment = mono_samples[start:end]
-        filtered_segment = rc_high_pass_filter(segment, cutoff, framerate)
+        # segment = rc_high_pass_filter(segment, cutoff, framerate)
 
         # Update waveform
-        line.set_data(range(len(filtered_segment)), filtered_segment)
+        line.set_data(range(len(segment)), segment)
 
         # Calculate and update FFT
-        freqs, magnitudes = calculate_fft(filtered_segment, framerate)
+        freqs, magnitudes = calculate_fft(segment, framerate)
         pitches = freq_to_pitch(freqs)
         pitch_mask = (pitches >= 0) & (pitches <= 96)
 
@@ -294,5 +295,5 @@ def mono_play_and_plot(input_file):
 
 
 if __name__ == "__main__":
-    input_file = "Succession.wav"
+    input_file = sys.argv[1]
     mono_play_and_plot(input_file)
