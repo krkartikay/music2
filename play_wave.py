@@ -9,6 +9,7 @@ from matplotlib.patches import Rectangle
 from scipy.fft import fft
 from scipy.signal import find_peaks
 from collections import deque
+from scipy.signal import butter, filtfilt
 
 
 class AudioPlayer:
@@ -149,6 +150,32 @@ def create_piano_keyboard(ax):
     return keys
 
 
+def butter_highpass(cutoff, fs, order=5):
+    nyq = 0.5 * fs
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype="high", analog=False)
+    return b, a
+
+
+def highpass_filter(data, cutoff, fs, order=5):
+    b, a = butter_highpass(cutoff, fs, order=order)
+    y = filtfilt(b, a, data)
+    return y
+
+
+def rc_high_pass_filter(data, cutoff, fs):
+    RC = 1.0 / (cutoff * 2 * np.pi)
+    dt = 1.0 / fs
+    alpha = RC / (RC + dt)
+
+    y = np.zeros_like(data)
+    y[0] = data[0]
+    for i in range(1, len(data)):
+        y[i] = alpha * (y[i - 1] + data[i] - data[i - 1])
+
+    return y
+
+
 def mono_play_and_plot(input_file):
     with wave.open(input_file, "rb") as wf:
         nchannels, sampwidth, framerate, nframes, comptype, compname = wf.getparams()
@@ -211,25 +238,28 @@ def mono_play_and_plot(input_file):
     play_thread = threading.Thread(target=player.play_audio)
     play_thread.start()
 
+    cutoff = 100  # Cutoff frequency in Hz
+
     def update_plot(frame):
         start = player.current_position
         end = start + segment_len
         segment = mono_samples[start:end]
+        filtered_segment = rc_high_pass_filter(segment, cutoff, framerate)
 
         # Update waveform
-        line.set_data(range(len(segment)), segment)
+        line.set_data(range(len(filtered_segment)), filtered_segment)
 
         # Calculate and update FFT
-        freqs, magnitudes = calculate_fft(segment, framerate)
+        freqs, magnitudes = calculate_fft(filtered_segment, framerate)
         pitches = freq_to_pitch(freqs)
-        pitch_mask = (pitches >= 48) & (pitches <= 96)
+        pitch_mask = (pitches >= 0) & (pitches <= 96)
 
         normalized_magnitudes = magnitudes / np.max(magnitudes)
         fft_history.append(normalized_magnitudes[pitch_mask])
 
         # Update spectrogram
         spectrogram.set_array(np.array(fft_history).T)
-        spectrogram.set_extent([start / framerate - 10, start / framerate, 48, 96])
+        spectrogram.set_extent([start / framerate - 10, start / framerate, 0, 96])
 
         # Find and display dominant notes
         dominant_notes = find_dominant_notes(freqs, magnitudes, piano_freqs)
@@ -264,5 +294,5 @@ def mono_play_and_plot(input_file):
 
 
 if __name__ == "__main__":
-    input_file = "ThatchedVillagers.wav"
+    input_file = "Succession.wav"
     mono_play_and_plot(input_file)
