@@ -44,20 +44,27 @@ class MusicExplainer(QMainWindow):
         self.h_scroll.valueChanged.connect(self.waveform_widget.set_scroll)
         main_layout.addWidget(self.h_scroll)
 
-        # Add zoom slider
+        # Remove the zoom slider, as we now use keyboard shortcuts for zooming
+        # Instead, add labels to display current zoom levels
         zoom_layout = QHBoxLayout()
-        zoom_layout.addWidget(QLabel("Zoom:"))
-        self.zoom_slider = QSlider(Qt.Horizontal)
-        self.zoom_slider.setRange(100, 1000)  # 1x to 10x zoom
-        self.zoom_slider.setValue(100)
-        self.zoom_slider.valueChanged.connect(self.update_zoom)
-        zoom_layout.addWidget(self.zoom_slider)
+        zoom_layout.addWidget(QLabel("Horizontal Zoom:"))
+        self.horizontal_zoom_label = QLabel("1.00x")
+        zoom_layout.addWidget(self.horizontal_zoom_label)
+        zoom_layout.addWidget(QLabel("Vertical Zoom:"))
+        self.vertical_zoom_label = QLabel("1.00x")
+        zoom_layout.addWidget(self.vertical_zoom_label)
         main_layout.addLayout(zoom_layout)
 
     def setup_audio_handler(self):
         self.audio_handler = AudioHandler()
         self.audio_handler.playback_position_changed.connect(self.update_playhead)
         self.waveform_widget.playhead_changed.connect(self.seek_audio)
+        self.waveform_widget.zoom_changed.connect(self.update_zoom_labels)
+
+    def update_zoom_labels(self, h_zoom, v_zoom):
+        self.horizontal_zoom_label.setText(f"{h_zoom:.2f}x")
+        self.vertical_zoom_label.setText(f"{v_zoom:.2f}x")
+        self.h_scroll.setRange(0, self.waveform_widget.get_max_scroll())
 
     def open_file(self):
         file_name, _ = QFileDialog.getOpenFileName(

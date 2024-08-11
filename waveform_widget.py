@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QWidget, QScrollBar
+from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QPen, QColor
 from PySide6.QtCore import Qt, Signal, QPointF
 import numpy as np
@@ -6,11 +6,13 @@ import numpy as np
 
 class WaveformWidget(QWidget):
     playhead_changed = Signal(int)
+    zoom_changed = Signal(float, float)  # Emit horizontal and vertical zoom factors
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.waveform = None
-        self.zoom_factor = 1
+        self.horizontal_zoom_factor = 1
+        self.vertical_zoom_factor = 1
         self.scroll_position = 0
         self.playhead_position = 0
         self.setMouseTracking(True)
@@ -19,8 +21,14 @@ class WaveformWidget(QWidget):
         self.waveform = waveform
         self.update()
 
-    def set_zoom(self, factor):
-        self.zoom_factor = max(1, factor)
+    def set_horizontal_zoom(self, factor):
+        self.horizontal_zoom_factor = max(1, factor)
+        self.zoom_changed.emit(self.horizontal_zoom_factor, self.vertical_zoom_factor)
+        self.update()
+
+    def set_vertical_zoom(self, factor):
+        self.vertical_zoom_factor = max(1, factor)
+        self.zoom_changed.emit(self.horizontal_zoom_factor, self.vertical_zoom_factor)
         self.update()
 
     def set_scroll(self, position):
@@ -36,7 +44,9 @@ class WaveformWidget(QWidget):
     def get_max_scroll(self):
         if self.waveform is None:
             return 0
-        return max(0, int(len(self.waveform) * self.zoom_factor - self.width()))
+        return max(
+            0, int(len(self.waveform) * self.horizontal_zoom_factor - self.width())
+        )
 
     def paintEvent(self, event):
         if self.waveform is None:
@@ -56,8 +66,10 @@ class WaveformWidget(QWidget):
         pen.setWidth(1)
         painter.setPen(pen)
 
-        samples_per_pixel = max(1, int(len(self.waveform) / (width * self.zoom_factor)))
-        start_sample = int(self.scroll_position / self.zoom_factor)
+        samples_per_pixel = max(
+            1, int(len(self.waveform) / (width * self.horizontal_zoom_factor))
+        )
+        start_sample = int(self.scroll_position / self.horizontal_zoom_factor)
         end_sample = min(len(self.waveform), start_sample + width * samples_per_pixel)
 
         for x in range(width):
@@ -67,7 +79,9 @@ class WaveformWidget(QWidget):
                 break
             chunk = self.waveform[sample_start:sample_end]
             if len(chunk) > 0:
-                y = int(np.mean(chunk) * mid_height + mid_height)
+                y = int(
+                    np.mean(chunk) * mid_height * self.vertical_zoom_factor + mid_height
+                )
                 painter.drawLine(x, mid_height, x, y)
 
         # Draw playhead
@@ -81,19 +95,28 @@ class WaveformWidget(QWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton and self.waveform is not None:
             samples_per_pixel = max(
-                1, int(len(self.waveform) / (self.width() * self.zoom_factor))
+                1,
+                int(len(self.waveform) / (self.width() * self.horizontal_zoom_factor)),
             )
-            start_sample = int(self.scroll_position / self.zoom_factor)
+            start_sample = int(self.scroll_position / self.horizontal_zoom_factor)
             clicked_sample = start_sample + event.x() * samples_per_pixel
             self.set_playhead(clicked_sample)
             self.playhead_changed.emit(self.playhead_position)
 
     def wheelEvent(self, event):
-        if event.modifiers() & Qt.ControlModifier:
-            # Zoom
+        modifiers = event.modifiers()
+        if (
+            modifiers & Qt.ControlModifier
+        ):  # Command key on macOS, Windows key on Windows
+            # Horizontal zoom
             zoom_change = event.angleDelta().y() / 120
-            new_zoom = max(1, self.zoom_factor + zoom_change)
-            self.set_zoom(new_zoom)
+            new_zoom = max(1, self.horizontal_zoom_factor * (1.1**zoom_change))
+            self.set_horizontal_zoom(new_zoom)
+        elif modifiers & Qt.AltModifier:  # Option key on macOS, Alt key on Windows
+            # Vertical zoom
+            zoom_change = event.angleDelta().y() / 120
+            new_zoom = max(1, self.vertical_zoom_factor * (1.1**zoom_change))
+            self.set_vertical_zoom(new_zoom)
         else:
             # Scroll
             self.set_scroll(self.scroll_position - event.angleDelta().y())
